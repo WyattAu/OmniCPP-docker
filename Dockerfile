@@ -94,7 +94,7 @@ RUN groupadd --gid ${USER_GID} ${USERNAME} && \
 RUN npm install -g setup-cpp@${SETUP_CPP_VERSION} &&\
     NODE_OPTIONS="--enable-source-maps" \
     setup-cpp \
-        --nala true \
+        --nala false \
         --compiler llvm \
         --cmake true \
         --ninja true \
@@ -112,12 +112,6 @@ RUN npm install -g setup-cpp@${SETUP_CPP_VERSION} &&\
         --gcovr true \
         --doxygen true \
         --ccache true &&\
-    nala autoremove -y && \
-    nala autopurge -y && \
-    apt-get clean && \
-    nala clean --lists && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -rf /tmp/* &&\
     npm cache clean --force
 
 # Configure Conan
