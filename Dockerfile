@@ -1,24 +1,23 @@
 # syntax=docker/dockerfile:1.4
 ARG BASE_OS="bitnami/minideb"
-
-# Tag of the base OS image
 ARG OS_VERSION="bookworm"
 
-# Image with layers as used by all succeeding steps
+# Base system stage
 FROM ${BASE_OS}:${OS_VERSION} AS base
 
-ARG SETUP_CPP_VERSION="1.7.0"
-ARG PYTHON_VERSION="3.12.1"
 ARG USERNAME=developer
 ARG USER_UID=1001
-ARG USER_GID=$USER_UID
+ARG USER_GID=${USER_UID}
 
-# Configure environment variables
+# Configure environment
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1\
+    PATH="/home/${USERNAME}/.local/bin:${PATH}"
 
-RUN install_packages --no-install-recommends \
+# Install system dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    install_packages --no-install-recommends \
         bash \
         git \
         nodejs \
@@ -81,17 +80,21 @@ RUN install_packages --no-install-recommends \
         libxcb-res0-dev \
         libxaw7-dev \
         libglfw3-dev && \
-    rm -rf /var/lib/apt/lists/* &&\
-    apt-get clean
+    rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN groupadd --gid "${USER_GID}" "${USERNAME}" && \
+    useradd --uid "${USER_UID}" --gid "${USER_GID}" -m "${USERNAME}" && \
+    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
+    chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
-RUN groupadd --gid ${USER_GID} ${USERNAME} && \
-    useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME} && \
-    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} && \
-    chmod 0440 /etc/sudoers.d/${USERNAME}    
+# Build tools stage
+FROM base AS build-tools
 
-# Install setup-cpp and configure tools
-RUN npm install -g setup-cpp@${SETUP_CPP_VERSION} &&\
+ARG SETUP_CPP_VERSION="1.7.0"
+
+# Install development tools
+RUN npm install -g setup-cpp@${SETUP_CPP_VERSION} && \
     NODE_OPTIONS="--enable-source-maps" \
     setup-cpp \
         --nala false \
@@ -100,7 +103,7 @@ RUN npm install -g setup-cpp@${SETUP_CPP_VERSION} &&\
         --ninja true \
         --task true \
         --vcpkg true \
-        --conan true \
+        --conan false \
         --make true \
         --clang-tidy true \
         --clang-format true \
@@ -111,48 +114,52 @@ RUN npm install -g setup-cpp@${SETUP_CPP_VERSION} &&\
         --cmake-lint \
         --gcovr true \
         --doxygen true \
-        --ccache true &&\
+        --ccache true && \
     npm cache clean --force
 
-# Configure Conan
-RUN conan profile detect --force && \
-    conan profile update settings.compiler.cppstd=23 default && \
-    conan profile update settings.compiler.libcxx=libstdc++11 default && \
-    conan config set general.revisions_enabled=1
+# Final image stage
+FROM base AS dev-environment
 
+ARG PYTHON_VERSION="3.12.1"
+ARG USERNAME=developer
 
+# Switch to non-root user
+USER ${USERNAME}
+WORKDIR /home/${USERNAME}
+
+# Configure environment variables
+ENV PYENV_ROOT="/home/${USERNAME}/.pyenv" 
+ENV PATH="${PYENV_ROOT}/bin:${PYENV_ROOT}/shims:${PATH}"
+
+# Install pyenv and Python version
 RUN curl -fsSL https://pyenv.run | bash && \
     { echo; \
       echo 'export PYENV_ROOT="$HOME/.pyenv"'; \
       echo 'export PATH="$PYENV_ROOT/bin:$PATH"'; \
-      echo 'eval "$(pyenv init -)"'; \
-      echo 'eval "$(pyenv virtualenv-init -)"'; } >> /etc/profile.d/pyenv.sh && \
-    export PYENV_ROOT="/root/.pyenv" && \
-    export PATH="$PYENV_ROOT/bin:$PATH" && \
-    pyenv install ${PYTHON_VERSION} && \
-    pyenv global ${PYTHON_VERSION} && \
-    pyenv rehash
+      echo 'eval "$(pyenv init --path)"'; \
+      echo 'eval "$(pyenv virtualenv-init -)"'; } >> ~/.bashrc && \
+    eval "$(pyenv init --path)" && \
+    pyenv install "${PYTHON_VERSION}" && \
+    pyenv global "${PYTHON_VERSION}" && \
+    pyenv rehash && \
+    python -m pip install --upgrade pip setuptools wheel
 
-# Clean temporary files as root
-RUN rm -rf /tmp/* && \
-    find /tmp -mindepth 1 -delete || true
 
-# Switch to developer user
-USER $USERNAME
-WORKDIR /home/$USERNAME
+# Install user tools with pipx
+RUN pipx install conan &&\
+    pipx ensurepath 
 
-# Configure final environment variables
-ENV PYENV_ROOT="/home/$USERNAME/.pyenv"
-ENV PATH="$PYENV_ROOT/shims:$PYENV_ROOT/bin:/home/$USERNAME/.local/bin:$PATH"
+# Configure Conan using external configuration files
+RUN mkdir -p ~/.conan/profiles && \
+    conan profile detect --name=default && \
+    printf "[settings]\nos=Linux\narch=x86_64\ncompiler=clang\ncompiler.version=14\n" \
+           "compiler.cppstd=23\ncompiler.libcxx=libstdc++23\nbuild_type=Release" \
+           > ~/.conan/profiles/default && \
+    printf "[general]\nrevisions_enabled=1" > ~/.conan/conan.conf
 
-RUN find /tmp -mindepth 1 -user developer -delete || true
-
-RUN pipx install pip && \
-    pipx install wheel && \
-    pipx ensurepath --force && \
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-
-# Final environment setup
-RUN echo 'export PS1="\[\033[1;32m\]\u@dev-container\[\033[0m\]:\w\$ "' >> ~/.bashrc
+# Set bash prompt and cleanup
+RUN echo 'export PS1="\[\033[1;32m\]\u@dev-container\[\033[0m\]:\w\$ "' >> ~/.bashrc && \
+    sudo rm -rf /var/log/* /tmp/* && \
+    find /tmp -mindepth 1 -delete 2>/dev/null || true
 
 ENTRYPOINT ["/bin/bash"]
