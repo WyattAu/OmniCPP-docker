@@ -25,7 +25,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3 \
         python3-pip \
         curl \
-        pipx \
         gdb \
         sudo \
         wget \
@@ -142,7 +141,9 @@ RUN curl -fsSL https://pyenv.run | bash && \
     pyenv install "${PYTHON_VERSION}" && \
     pyenv global "${PYTHON_VERSION}" && \
     pyenv rehash && \
-    python -m pip install --upgrade pip setuptools wheel
+    python -m pip install --upgrade pip setuptools wheel &&\
+    python -m pip install --user pipx && \
+    python -m pipx ensurepath
 
 
 # Install user tools with pipx
@@ -157,9 +158,25 @@ RUN mkdir -p ~/.conan/profiles && \
            > ~/.conan/profiles/default && \
     printf "[general]\nrevisions_enabled=1" > ~/.conan/conan.conf
 
-# Set bash prompt and cleanup
-RUN echo 'export PS1="\[\033[1;32m\]\u@dev-container\[\033[0m\]:\w\$ "' >> ~/.bashrc && \
-    sudo rm -rf /var/log/* /tmp/* && \
-    find /tmp -mindepth 1 -delete 2>/dev/null || true
+# Install and configure zsh
+RUN sudo install_packages zsh && \
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k && \
+    { \
+    echo 'export TERM="xterm-256color"'; \
+    echo 'ZSH_THEME="powerlevel10k/powerlevel10k"'; \
+    echo 'DISABLE_UPDATE_PROMPT=true'; \
+    echo 'plugins=(git python docker docker-compose virtualenv)'; \
+    echo 'export POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true'; \
+    echo '[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh'; \
+    } >> ~/.zshrc
 
-ENTRYPOINT ["/bin/bash"]
+# Final setup
+COPY <<-"EOT" /home/${USERNAME}/.bashrc
+export PS1="\[\033[1;32m\]\u@dev-container\[\033[0m\]:\w\$ "
+source ~/.profile
+EOT
+
+# Default command
+CMD ["zsh"]
+
