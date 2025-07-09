@@ -164,18 +164,19 @@ RUN echo 'export PS1="\[\033[1;32m\]\u@dev-container\[\033[0m\]:\w\$ "' >> ~/.ba
     find /tmp -mindepth 1 -delete 2>/dev/null || true
 
 # Oh My Zsh and Powerlevel10k configuration
-RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended \
-    && git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k \
-    && { \
-    echo 'export TERM="xterm-256color"'; \
-    echo 'ZSH_THEME="powerlevel10k/powerlevel10k"'; \
-    echo 'plugins=(git python pip docker docker-compose gh debian common-aliases virtualenv poetry pyenv)'; \
-    echo 'POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true'; \
-    echo '[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh'; \
-    } >> ~/.zshrc
+# RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended \
+#     && git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k \
+#     && { \
+#     echo 'export TERM="xterm-256color"'; \
+#     echo 'ZSH_THEME="powerlevel10k/powerlevel10k"'; \
+#     echo 'plugins=(git python pip docker docker-compose gh debian common-aliases virtualenv poetry pyenv)'; \
+#     echo 'POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true'; \
+#     echo '[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh'; \
+#     } >> ~/.zshrc
+# 
+# ENV SHELL=/bin/zsh
+# 
+# # Default command
+# CMD ["zsh"]
 
-ENV SHELL=/bin/zsh
-
-# Default command
-CMD ["zsh"]
-
+ENTRYPOINT ["/bin/bash"]
